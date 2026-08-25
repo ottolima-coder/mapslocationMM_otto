@@ -83,6 +83,22 @@
       font-weight: bold;
     }
 
+    .topbar button.cleanup-btn {
+      background: var(--vermelho);
+      border-color: var(--vermelho);
+    }
+
+    .topbar button.cleanup-btn:hover {
+      background: #d63541;
+    }
+
+    .topbar button.cleanup-btn:disabled {
+      background: var(--chumbo);
+      border-color: var(--chumbo);
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
     #refreshBtn {
       display: flex;
       align-items: center;
@@ -187,6 +203,13 @@
       font-size: 13px;
       color: var(--chumbo);
       margin-bottom: 12px;
+    }
+
+    .panel .summary .ghost-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      color: #9a978f;
     }
 
     .driver-card {
@@ -372,6 +395,7 @@
     </h1>
     <div class="right" id="topRight">
       <span id="lastRefreshed"></span>
+      <button id="cleanupBtn" type="button" class="cleanup-btn" title="Remove registros incompletos criados por quedas de conexão" disabled>🧹 Limpar incompletos (0)</button>
       <button id="refreshBtn" type="button" title="Atualizar status dos motoristas">
         <span class="icon">⟳</span> Atualizar
       </button>
@@ -423,6 +447,7 @@
     const darkMapToggle = document.getElementById("darkMapToggle");
     const refreshBtn = document.getElementById("refreshBtn");
     const lastRefreshed = document.getElementById("lastRefreshed");
+    const cleanupBtn = document.getElementById("cleanupBtn");
 
     let map = null;
     let tileLayer = null;
@@ -546,8 +571,32 @@
       }
     }
 
+    // ---------- registros "fantasma" ----------
+    // Um registro fantasma acontece quando a conexão do motorista cai bem
+    // no início do processo, antes do perfil (nome/status) terminar de ser
+    // gravado no banco — sobra só o que o onDisconnect grava sozinho
+    // (conexao/telaAberta). Esse card nunca representa um motorista de
+    // verdade que interagiu com o app, então não faz sentido mostrar na
+    // lista nem deixar ocupando espaço/marker no mapa. A condição usada é
+    // simples e segura: "nome" só existe se o primeiro update completo do
+    // app do motorista chegou a ser gravado.
+    function isGhostDriver(info) {
+      return !info || !info.nome;
+    }
+
     function upsertDriver(uid, info) {
       drivers[uid] = info;
+
+      if (isGhostDriver(info)) {
+        // Registro incompleto: não cria/atualiza marker no mapa. Se por
+        // acaso um marker antigo existir para esse uid (não deveria, mas
+        // por segurança), removemos.
+        if (markers[uid]) {
+          map.removeLayer(markers[uid]);
+          delete markers[uid];
+        }
+        return;
+      }
 
       if (info.lat != null && info.lng != null) {
         if (!markers[uid]) {
@@ -673,10 +722,23 @@
 
     // ---------- lista lateral ----------
     function renderList() {
-      const uids = Object.keys(drivers);
+      const allUids = Object.keys(drivers);
+      const ghostUids = allUids.filter(uid => isGhostDriver(drivers[uid]));
+      const uids = allUids.filter(uid => !isGhostDriver(drivers[uid]));
+
+      // Botão de limpeza reflete quantos registros incompletos existem
+      // agora, independentemente de estarem sendo mostrados na lista.
+      cleanupBtn.textContent = "🧹 Limpar incompletos (" + ghostUids.length + ")";
+      cleanupBtn.disabled = ghostUids.length === 0;
+
       summary.textContent = uids.length
         ? uids.length + " motorista(s) registrados"
         : "Nenhum motorista registrado ainda.";
+      if (ghostUids.length > 0) {
+        summary.innerHTML = summary.textContent +
+          '<span class="ghost-note">' + ghostUids.length +
+          ' registro(s) incompleto(s) oculto(s) — causados por queda de conexão logo no início. Use "Limpar incompletos" para removê-los.</span>';
+      }
 
       if (uids.length === 0) {
         driverList.innerHTML = '<div class="empty-state">Assim que um motorista aceitar o rastreamento, ele aparecerá aqui.</div>';
@@ -767,6 +829,27 @@
       db.ref("drivers/" + uid).remove();
     }
     window.removeDriverCard = removeDriverCard;
+
+    // ---------- limpar registros fantasmas ----------
+    // Apaga do banco todos os registros que nunca tiveram nome gravado —
+    // ou seja, nunca representaram um motorista que de fato passou pelo
+    // fluxo de cadastro, só sobras de onDisconnect por queda de conexão.
+    cleanupBtn.addEventListener("click", () => {
+      const ghostUids = Object.keys(drivers).filter(uid => isGhostDriver(drivers[uid]));
+      if (ghostUids.length === 0) return;
+
+      if (!confirm('Remover ' + ghostUids.length + ' registro(s) incompleto(s)? Eles não representam motoristas reais, são sobras de conexões que caíram antes do cadastro terminar.')) {
+        return;
+      }
+
+      cleanupBtn.disabled = true;
+      const updates = {};
+      ghostUids.forEach(uid => { updates["drivers/" + uid] = null; });
+      db.ref().update(updates).catch(err => {
+        console.error("Falha ao limpar registros incompletos.", err);
+        alert("Não foi possível remover alguns registros. Tente novamente.");
+      });
+    });
 
     // ---------- helpers ----------
     // "Sinal" é calculado a partir de dois campos que o app do motorista
