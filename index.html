@@ -250,6 +250,11 @@
       line-height: 1.6;
     }
 
+    .notice.warn {
+      background: #FEF9E0;
+      border: 1px solid var(--amarelo);
+    }
+
     .step {
       display: none;
     }
@@ -352,6 +357,7 @@
         <div class="notice" id="message">
           Sua localização está sendo enviada ao painel do monitor durante o turno. Você não visualiza outros motoristas nesta tela, por design. O encerramento do compartilhamento é feito pelo monitor.
         </div>
+        <div class="notice warn" id="wakeLockNotice" style="margin-top:10px; display:none;"></div>
       </section>
 
     </div>
@@ -371,6 +377,8 @@
     let driverUid = null;
     let watchId = null;
     let driverRef = null;
+    let wakeLock = null;
+    let trackingActive = false;
 
     // ---------- elementos ----------
     const step1 = document.getElementById("step1");
@@ -392,6 +400,7 @@
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
     const message = document.getElementById("message");
+    const wakeLockNotice = document.getElementById("wakeLockNotice");
 
     const activeIcon = document.getElementById("activeIcon");
     const activeTitle = document.getElementById("activeTitle");
@@ -427,6 +436,38 @@
         statusText.textContent = "Não identificado";
       }
     }
+
+    // ---------- Wake Lock: impede a tela de apagar sozinha ----------
+    // Isso NÃO faz o rastreamento funcionar com o app minimizado — só evita
+    // que a tela apague por inatividade enquanto o motorista está com a
+    // página aberta. Se não for suportado, o app continua funcionando normal.
+    async function requestWakeLock() {
+      if (!("wakeLock" in navigator)) {
+        wakeLockNotice.style.display = "block";
+        wakeLockNotice.textContent = "Seu navegador não suporta manter a tela ligada automaticamente. Mantenha a tela do celular ligada manualmente durante o turno.";
+        return;
+      }
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLockNotice.style.display = "none";
+        wakeLock.addEventListener("release", () => {
+          wakeLock = null;
+        });
+      } catch (err) {
+        // Falha comum: página não está visível no momento do pedido.
+        // Vamos tentar de novo quando a aba voltar a ficar visível.
+        console.warn("Wake Lock não pôde ser adquirido agora:", err);
+      }
+    }
+
+    // O Wake Lock é liberado automaticamente pelo navegador quando a aba
+    // fica em segundo plano. Assim que o motorista volta pra aba, tentamos
+    // pedir de novo.
+    document.addEventListener("visibilitychange", () => {
+      if (trackingActive && document.visibilityState === "visible" && wakeLock === null) {
+        requestWakeLock();
+      }
+    });
 
     // ---------- passo 1 -> 2 ----------
     toStepConsent.addEventListener("click", () => {
@@ -495,6 +536,9 @@
       activeTitle.textContent = "Solicitando permissão de localização...";
       activeSub.textContent = "Autorize o acesso quando o navegador perguntar.";
 
+      trackingActive = true;
+      requestWakeLock();
+
       watchId = navigator.geolocation.watchPosition(
         onPosition,
         onPositionError,
@@ -558,8 +602,12 @@
     }
 
     window.addEventListener("beforeunload", () => {
+      trackingActive = false;
       if (watchId !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchId);
+      }
+      if (wakeLock) {
+        wakeLock.release();
       }
     });
   </script>
