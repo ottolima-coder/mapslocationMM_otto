@@ -663,7 +663,8 @@
 
       return "<strong>" + escapeHtml(info.nome || "Motorista") + "</strong><br>" +
         (info.placa ? escapeHtml(info.placa) + "<br>" : "") +
-        "Status: " + statusLabel(info.status) + "<br>" +
+        "Sinal: " + signalStatus(info).label + "<br>" +
+        "Status GPS: " + statusLabel(info.status) + "<br>" +
         "Atualizado: " + formatTime(info.ultimaAtualizacao) + "<br>" +
         '<span class="popup-address">📍 ' + addressLine(uid) + '</span>' +
         '<span class="popup-coords">' + formatCoords(info.lat, info.lng) + '</span>' +
@@ -699,11 +700,12 @@
           (info.telefone ? '<span class="label">Tel:</span> ' + escapeHtml(info.telefone) + '<br>' : '') +
           (info.placa ? '<span class="label">Veículo:</span> ' + escapeHtml(info.placa) + '<br>' : '') +
           (info.destino ? '<span class="label">Rota:</span> ' + escapeHtml(info.destino) + '<br>' : '') +
-          '<span class="label">Status:</span> <span class="badge">' + statusLabel(info.status) + '</span><br>' +
+          '<span class="label">Sinal:</span> <span class="badge">' + signalStatus(info).label + '</span><br>' +
+          '<span class="label">Status GPS:</span> ' + statusLabel(info.status) + '<br>' +
           '<span class="label">Autorizado em:</span> ' + formatTime(info.autorizadoEm) + '<br>' +
           '<span class="label">Última atualização:</span> ' + formatTime(info.ultimaAtualizacao) +
           (hasCoords
-            ? '<span class="address-line"> <span class="label">Endereço:</span> ' + addressLine(uid) + '</span>' +
+            ? '<span class="address-line">📍 <span class="label">Endereço:</span> ' + addressLine(uid) + '</span>' +
               '<span class="coords-line"><span class="label">Coordenadas:</span> ' + formatCoords(info.lat, info.lng) + '</span>'
             : '<span class="address-line"><span class="label">Localização:</span> ainda não recebida</span>') +
           '</div>';
@@ -767,13 +769,47 @@
     window.removeDriverCard = removeDriverCard;
 
     // ---------- helpers ----------
-    function dotClass(info) {
-      if (info.status === "permissao_negada") return "denied";
-      if (info.status === "encerrado") return "offline";
+    // "Sinal" é calculado a partir de dois campos que o app do motorista
+    // agora envia em tempo real:
+    // - conexao: "conectado" / "desconectado" — vem da presença de conexão
+    //   do Firebase (onDisconnect), definida pelo SERVIDOR assim que ele
+    //   percebe que o celular do motorista caiu (tela bloqueada tempo
+    //   suficiente, sem internet, app fechado). É o dado mais confiável
+    //   que existe aqui — não depende do celular do motorista conseguir
+    //   avisar nada.
+    // - telaAberta: true/false — a página do motorista está com o app
+    //   em primeiro plano (visível) agora.
+    // Motoristas que ainda estão numa versão antiga do link (sem esses
+    // dois campos) caem no cálculo antigo por tempo, como reserva.
+    function signalStatus(info) {
+      if (info.status === "encerrado") {
+        return { dot: "offline", label: "Encerrado" };
+      }
+      if (info.status === "permissao_negada") {
+        return { dot: "denied", label: "Permissão de localização negada" };
+      }
+
+      if (info.conexao === "desconectado") {
+        return { dot: "offline", label: "🔴 Sem sinal" };
+      }
+      if (info.conexao === "conectado") {
+        if (info.telaAberta === true) {
+          return { dot: "online", label: "🟢 Com sinal" };
+        }
+        if (info.telaAberta === false) {
+          return { dot: "stale", label: "🟡 Tela bloqueada / em segundo plano" };
+        }
+      }
+
+      // fallback por tempo, só para registros sem os campos novos
       const age = Date.now() - (info.ultimaAtualizacao || 0);
-      if (age < 2 * 60 * 1000) return "online";
-      if (age < 10 * 60 * 1000) return "stale";
-      return "offline";
+      if (age < 2 * 60 * 1000) return { dot: "online", label: "🟢 Com sinal (estimado)" };
+      if (age < 10 * 60 * 1000) return { dot: "stale", label: "🟡 Tela bloqueada (estimado)" };
+      return { dot: "offline", label: "🔴 Sem sinal (estimado)" };
+    }
+
+    function dotClass(info) {
+      return signalStatus(info).dot;
     }
 
     function statusLabel(status) {
