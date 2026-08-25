@@ -666,18 +666,46 @@
     }
 
     // Quando a página volta a ficar visível (motorista desbloqueou/reabriu),
-    // captura na hora e reinicia o ciclo de atualização periódica.
+    // captura na hora e reinicia o ciclo de atualização periódica. Também
+    // marcamos "telaAberta" no banco para o monitor saber, em tempo real,
+    // se a tela está mesmo ativa ou não.
     document.addEventListener("visibilitychange", () => {
       if (!trackingActive) return;
       if (document.visibilityState === "visible") {
+        if (driverRef) driverRef.update({ telaAberta: true });
         captureLocation();
         startInterval();
       } else {
         // Em segundo plano o navegador vai suspender isso de qualquer forma;
-        // paramos o interval só para não deixar timers acumulados.
+        // paramos o interval só para não deixar timers acumulados. Avisamos
+        // que a tela não está mais ativa (mesmo que ainda esteja conectado).
+        if (driverRef) driverRef.update({ telaAberta: false });
         stopInterval();
       }
     });
+
+    // ---------- presença de conexão (para "com sinal / sem sinal") ----------
+    // .info/connected é um caminho especial do Firebase: ele reflete se
+    // ESTE cliente tem uma conexão ativa com o servidor agora. Sempre que
+    // ficar conectado, registramos um "onDisconnect" — uma instrução que o
+    // PRÓPRIO SERVIDOR executa assim que perceber que a conexão caiu
+    // (tela bloqueada tempo suficiente para suspender a rede, sem sinal,
+    // app fechado etc.), mesmo que o celular do motorista não consiga
+    // mais rodar nenhum código nesse momento. É o jeito mais confiável de
+    // saber "sem sinal" que dá pra ter numa página web.
+    function watchConnection() {
+      if (!driverRef) return;
+      db.ref(".info/connected").on("value", snap => {
+        if (snap.val() === true) {
+          driverRef.onDisconnect().update({
+            conexao: "desconectado",
+            telaAberta: false,
+            ultimaDesconexao: firebase.database.ServerValue.TIMESTAMP
+          });
+          driverRef.update({ conexao: "conectado" });
+        }
+      });
+    }
 
     // ---------- passo 1 -> 2 ----------
     toStepConsent.addEventListener("click", () => {
@@ -754,11 +782,14 @@
         placa: plateInput.value.trim() || null,
         destino: destinationInput.value.trim() || null,
         status: "aguardando_gps",
+        telaAberta: true,
+        conexao: "conectado",
         autorizadoEm: firebase.database.ServerValue.TIMESTAMP,
         ultimaAtualizacao: firebase.database.ServerValue.TIMESTAMP
       };
 
       driverRef.update(profile);
+      watchConnection();
 
       infoName.textContent = profile.nome;
       showStep(3);
