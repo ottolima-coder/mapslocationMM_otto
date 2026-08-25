@@ -476,7 +476,7 @@
     function popupHtml(uid, info) {
       const canStop = info.status !== "encerrado";
       const actionHtml = canStop
-        ? '<button class="popup-stop-btn" onclick="window.stopDriver(\'' + uid + '\')">🔴 Encerrar rastreamento</button>'
+        ? '<button class="popup-stop-btn" onclick="window.stopDriver(\'' + uid + '\')"> Encerrar rastreamento</button>'
         : '<button class="popup-stop-btn remove-btn" onclick="window.removeDriverCard(\'' + uid + '\')">✖ Remover da lista</button>';
 
       return "<strong>" + escapeHtml(info.nome || "Motorista") + "</strong><br>" +
