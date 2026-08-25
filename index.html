@@ -272,6 +272,74 @@
       padding: 4px;
     }
 
+    /* ---------- aviso de navegador embutido (WhatsApp/Instagram/FB) ---------- */
+    #inAppWarning {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--preto);
+      color: var(--branco);
+      z-index: 9999;
+      padding: 28px 20px;
+      text-align: center;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #inAppWarning.visible {
+      display: flex;
+    }
+
+    #inAppWarning .icon {
+      font-size: 40px;
+      margin-bottom: 14px;
+    }
+
+    #inAppWarning h2 {
+      font-size: 18px;
+      margin: 0 0 12px;
+    }
+
+    #inAppWarning p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--cinza);
+      max-width: 340px;
+      margin: 0 0 10px;
+    }
+
+    #inAppWarning .steps {
+      background: #232323;
+      border-radius: 10px;
+      padding: 14px 16px;
+      text-align: left;
+      font-size: 13px;
+      line-height: 1.7;
+      max-width: 340px;
+      margin: 6px 0 18px;
+    }
+
+    #inAppWarning button {
+      background: var(--amarelo);
+      color: var(--preto);
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-weight: bold;
+      font-size: 14px;
+      cursor: pointer;
+      max-width: 340px;
+      width: 100%;
+    }
+
+    #inAppWarning .copied {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--amarelo);
+      display: none;
+    }
+
     .auth-error {
       display: none;
       background: #FDEDEE;
@@ -291,6 +359,17 @@
 </head>
 
 <body>
+  <!-- Aviso mostrado quando a página é aberta dentro do navegador embutido
+       do WhatsApp/Instagram/Facebook, onde o login do Firebase trava. -->
+  <div id="inAppWarning">
+    <div class="icon">⚠️</div>
+    <h2>Abra este link no seu navegador</h2>
+    <p>Você abriu este link dentro do WhatsApp (ou outro app). Por uma limitação técnica desse navegador embutido, o rastreamento não consegue autenticar aqui — a tela fica travada em "Autenticando...".</p>
+    <div class="steps" id="inAppSteps"><!-- preenchido via JS conforme o sistema (Android/iOS) --></div>
+    <button id="copyLinkBtn">Copiar link</button>
+    <div class="copied" id="copiedMsg">Link copiado! Cole no Chrome ou Safari.</div>
+  </div>
+
   <header class="topbar">
     <h1>
       <img class="brand-logo" src="favicon.png" alt="Midle Mile Shippify">
@@ -382,6 +461,71 @@
 
     </div>
   </main>
+
+  <script>
+    // ---------- detecção de navegador embutido (in-app browser) ----------
+    // WhatsApp, Instagram e Facebook abrem links no próprio webview do app,
+    // que costuma bloquear IndexedDB/armazenamento — exatamente o que o
+    // Firebase Auth usa para logar. Resultado: o botão "Autenticando..."
+    // fica travado para sempre, sem erro nenhum. A solução real é abrir o
+    // link no navegador de verdade (Chrome/Safari).
+    (function () {
+      const ua = navigator.userAgent || navigator.vendor || "";
+      const isAndroid = /android/i.test(ua);
+      const isIOS = /iphone|ipad|ipod/i.test(ua) && !window.MSStream;
+
+      // Marcadores conhecidos de navegador embutido.
+      const isKnownInApp = /(WhatsApp|FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger)/i.test(ua);
+      // WebView genérico do Android (sem marcador específico do app, mas
+      // ainda assim é um webview, não o Chrome de verdade).
+      const isAndroidGenericWebview = isAndroid && /; wv\)/i.test(ua);
+
+      const isInApp = isKnownInApp || isAndroidGenericWebview;
+
+      if (!isInApp) return; // navegador normal, segue o fluxo normal da página
+
+      const currentUrl = window.location.href;
+
+      // No Android dá para tentar abrir automaticamente no Chrome via
+      // intent://. No iOS não existe equivalente (a Apple não permite um
+      // app forçar a abertura de outro navegador), então mostramos direto
+      // as instruções manuais.
+      if (isAndroid) {
+        const intentUrl = "intent://" + currentUrl.replace(/^https?:\/\//, "") +
+          "#Intent;scheme=https;package=com.android.chrome;end";
+        window.location.href = intentUrl;
+      }
+
+      const warning = document.getElementById("inAppWarning");
+      const steps = document.getElementById("inAppSteps");
+      const copyBtn = document.getElementById("copyLinkBtn");
+      const copiedMsg = document.getElementById("copiedMsg");
+
+      if (isAndroid) {
+        steps.innerHTML =
+          "Se o Chrome não abriu sozinho:<br>" +
+          "1. Toque nos <strong>três pontinhos (⋮)</strong> no canto superior direito<br>" +
+          "2. Toque em <strong>\"Abrir no navegador\"</strong> ou <strong>\"Abrir no Chrome\"</strong>";
+      } else if (isIOS) {
+        steps.innerHTML =
+          "1. Toque no ícone de <strong>compartilhar</strong> (o quadrado com a seta ↑) na barra inferior<br>" +
+          "2. Toque em <strong>\"Abrir no Safari\"</strong>";
+      } else {
+        steps.innerHTML = "Copie o link abaixo e cole no Chrome ou Safari.";
+      }
+
+      copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(currentUrl).then(() => {
+          copiedMsg.style.display = "block";
+        }).catch(() => {
+          // fallback bem simples caso a Clipboard API não esteja disponível
+          prompt("Copie o link manualmente:", currentUrl);
+        });
+      });
+
+      warning.classList.add("visible");
+    })();
+  </script>
 
   <!-- Firebase (compat SDK — simples, sem build step) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
