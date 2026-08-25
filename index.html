@@ -241,6 +241,16 @@
       margin-top: 4px;
     }
 
+    .big-status .retry-btn {
+      margin-top: 14px;
+    }
+
+    .big-status .restart-btn {
+      margin-top: 8px;
+      background: var(--chumbo);
+      color: var(--branco);
+    }
+
     .notice {
       padding: 12px;
       border-radius: 8px;
@@ -667,20 +677,47 @@
       // (ex.: navegador limpou os dados), autenticamos de novo — sem
       // mostrar a tela de consentimento outra vez, já que o motorista já
       // autorizou antes.
+      //
+      // CORREÇÃO: essa chamada de signInAnonymously() precisa de um timeout
+      // próprio (igual ao fluxo do passo 2). Sem isso, se a chamada travar
+      // (sem resolver nem rejeitar — o que acontece em navegadores com
+      // storage restrito), o .catch() nunca dispara e a tela fica presa
+      // para sempre em "Retomando seu rastreamento...".
       setTimeout(() => {
-        if (!auth.currentUser) {
-          auth.signInAnonymously().catch(err => {
-            console.error("Falha ao retomar sessão automaticamente.", err);
-            activeIcon.textContent = "⚠️";
-            activeTitle.textContent = "Não foi possível retomar automaticamente";
-            activeSub.textContent = "Toque no botão abaixo para recomeçar o cadastro.";
-            const retryBtn = document.createElement("button");
-            retryBtn.textContent = "Recomeçar identificação";
-            retryBtn.style.marginTop = "14px";
-            retryBtn.onclick = () => { clearLocalProfile(); location.reload(); };
-            document.getElementById("step3").querySelector(".big-status").appendChild(retryBtn);
-          });
-        }
+        if (auth.currentUser) return;
+
+        const resumeAuthPromise = auth.signInAnonymously();
+        const resumeTimeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("timeout")), AUTH_TIMEOUT_MS);
+        });
+
+        Promise.race([resumeAuthPromise, resumeTimeoutPromise]).catch(err => {
+          console.error("Falha ao retomar sessão automaticamente.", err);
+
+          const isTimeout = err && err.message === "timeout";
+          activeIcon.textContent = "⚠️";
+          activeTitle.textContent = "Não foi possível retomar automaticamente";
+          activeSub.textContent = isTimeout
+            ? "O servidor demorou demais para responder. Verifique sua internet e tente novamente."
+            : "Toque em um dos botões abaixo para continuar.";
+
+          const bigStatus = document.getElementById("step3").querySelector(".big-status");
+
+          // Evita empilhar botões se essa função rodar mais de uma vez.
+          bigStatus.querySelectorAll(".retry-btn, .restart-btn").forEach(b => b.remove());
+
+          const retryBtn = document.createElement("button");
+          retryBtn.textContent = "Tentar novamente";
+          retryBtn.className = "retry-btn";
+          retryBtn.onclick = () => { location.reload(); };
+          bigStatus.appendChild(retryBtn);
+
+          const restartBtn = document.createElement("button");
+          restartBtn.textContent = "Recomeçar identificação";
+          restartBtn.className = "restart-btn";
+          restartBtn.onclick = () => { clearLocalProfile(); location.reload(); };
+          bigStatus.appendChild(restartBtn);
+        });
       }, 3000);
     })();
 
