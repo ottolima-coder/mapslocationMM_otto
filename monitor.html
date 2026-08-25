@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Painel do Monitor — MM Shippify</title>
+  <title>Painel do Monitor MM Shippify Team</title>
+  <link rel="icon" type="image/png" href="favicon.png">
 
   <link
     rel="stylesheet"
@@ -12,17 +13,26 @@
   />
 
   <style>
+    :root {
+      --preto: #151515;
+      --chumbo: #3A3931;
+      --cinza: #DAD7D1;
+      --vermelho: #EF404C;
+      --amarelo: #FEDD29;
+      --branco: #FFFFFF;
+    }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: #f4f6f8;
-      color: #17202a;
+      background: var(--cinza);
+      color: var(--preto);
     }
 
     .topbar {
-      background: #111827;
-      color: white;
+      background: var(--preto);
+      color: var(--branco);
       padding: 14px 20px;
       display: flex;
       align-items: center;
@@ -33,6 +43,15 @@
     .topbar h1 {
       margin: 0;
       font-size: 19px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      height: 26px;
+      width: auto;
+      display: block;
     }
 
     .topbar .right {
@@ -40,16 +59,28 @@
       align-items: center;
       gap: 14px;
       font-size: 13px;
+      color: var(--cinza);
     }
 
     .topbar button {
-      background: #1f2937;
-      color: #e5e7eb;
-      border: 1px solid #374151;
+      background: var(--chumbo);
+      color: var(--branco);
+      border: 1px solid var(--chumbo);
       border-radius: 6px;
       padding: 7px 12px;
       font-size: 13px;
       cursor: pointer;
+    }
+
+    .topbar button:hover {
+      background: #4a4940;
+    }
+
+    .topbar button.active-toggle {
+      background: var(--amarelo);
+      color: var(--preto);
+      border-color: var(--amarelo);
+      font-weight: bold;
     }
 
     /* ---------- login ---------- */
@@ -62,8 +93,8 @@
     }
 
     #loginForm {
-      background: white;
-      border: 1px solid #e5e7eb;
+      background: var(--branco);
+      border: 1px solid var(--cinza);
       border-radius: 14px;
       padding: 28px;
       width: 100%;
@@ -73,6 +104,7 @@
     #loginForm h2 {
       margin: 0 0 18px;
       font-size: 18px;
+      color: var(--preto);
     }
 
     #loginForm label {
@@ -80,21 +112,27 @@
       font-size: 13px;
       font-weight: bold;
       margin-bottom: 6px;
+      color: var(--chumbo);
     }
 
     #loginForm input {
       width: 100%;
       padding: 11px;
-      border: 1px solid #ccd1d8;
+      border: 1px solid var(--cinza);
       border-radius: 8px;
       font-size: 14px;
       margin-bottom: 14px;
     }
 
+    #loginForm input:focus {
+      outline: none;
+      border-color: var(--chumbo);
+    }
+
     #loginForm button {
       width: 100%;
-      background: #111827;
-      color: white;
+      background: var(--preto);
+      color: var(--branco);
       border: 0;
       border-radius: 8px;
       padding: 12px;
@@ -104,7 +142,7 @@
     }
 
     #loginError {
-      color: #dc2626;
+      color: var(--vermelho);
       font-size: 13px;
       margin-top: 10px;
       min-height: 16px;
@@ -118,20 +156,20 @@
     }
 
     .panel {
-      background: white;
-      border-right: 1px solid #ddd;
+      background: var(--branco);
+      border-right: 1px solid var(--cinza);
       overflow: auto;
       padding: 14px;
     }
 
     .panel .summary {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--chumbo);
       margin-bottom: 12px;
     }
 
     .driver-card {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--cinza);
       border-radius: 10px;
       padding: 12px;
       margin-bottom: 10px;
@@ -140,12 +178,12 @@
     }
 
     .driver-card:hover {
-      border-color: #9ca3af;
+      border-color: var(--chumbo);
     }
 
     .driver-card.selected {
-      border-color: #111827;
-      box-shadow: 0 0 0 1px #111827;
+      border-color: var(--preto);
+      box-shadow: 0 0 0 1px var(--preto);
     }
 
     .driver-card .name-row {
@@ -155,41 +193,42 @@
       font-weight: bold;
       font-size: 14px;
       margin-bottom: 6px;
+      color: var(--preto);
     }
 
     .driver-dot {
       width: 9px;
       height: 9px;
       border-radius: 50%;
-      background: #9ca3af;
+      background: var(--cinza);
       flex-shrink: 0;
     }
 
     .driver-dot.online {
-      background: #22c55e;
-      box-shadow: 0 0 6px rgba(34,197,94,.7);
+      background: var(--amarelo);
+      box-shadow: 0 0 6px rgba(254,221,41,.8);
     }
 
     .driver-dot.stale {
-      background: #f59e0b;
+      background: var(--chumbo);
     }
 
     .driver-dot.offline {
-      background: #9ca3af;
+      background: var(--cinza);
     }
 
     .driver-dot.denied {
-      background: #dc2626;
+      background: var(--vermelho);
     }
 
     .driver-meta {
       font-size: 12px;
-      color: #4b5563;
+      color: var(--chumbo);
       line-height: 1.6;
     }
 
     .driver-meta .label {
-      color: #9ca3af;
+      color: #9a978f;
     }
 
     .badge {
@@ -198,8 +237,31 @@
       font-weight: bold;
       padding: 2px 7px;
       border-radius: 999px;
-      background: #f3f4f6;
-      color: #374151;
+      background: var(--cinza);
+      color: var(--preto);
+    }
+
+    .stop-btn {
+      width: 100%;
+      margin-top: 10px;
+      background: var(--vermelho);
+      color: var(--branco);
+      border: 0;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .stop-btn:hover {
+      background: #d63541;
+    }
+
+    .stop-btn:disabled {
+      background: var(--cinza);
+      color: var(--chumbo);
+      cursor: not-allowed;
     }
 
     #map {
@@ -209,9 +271,22 @@
 
     .empty-state {
       text-align: center;
-      color: #9ca3af;
+      color: var(--chumbo);
       font-size: 13px;
       padding: 40px 10px;
+    }
+
+    .popup-stop-btn {
+      margin-top: 8px;
+      width: 100%;
+      background: #EF404C;
+      color: #fff;
+      border: 0;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
     }
 
     @media (max-width: 760px) {
@@ -222,7 +297,7 @@
       }
       .panel {
         border-right: 0;
-        border-bottom: 1px solid #ddd;
+        border-bottom: 1px solid var(--cinza);
         max-height: 40vh;
       }
       #map {
@@ -234,8 +309,12 @@
 
 <body>
   <header class="topbar">
-    <h1>🖥️ MM Shippify — Painel do Monitor</h1>
+    <h1>
+      <img class="brand-logo" src="favicon.png" alt="MM Shippify">
+      MM Shippify — Painel do Monitor
+    </h1>
     <div class="right" id="topRight">
+      <button id="darkMapToggle" type="button">🌙 Mapa escuro</button>
       <span id="userEmail"></span>
     </div>
   </header>
@@ -280,11 +359,23 @@
     const userEmail = document.getElementById("userEmail");
     const summary = document.getElementById("summary");
     const driverList = document.getElementById("driverList");
+    const darkMapToggle = document.getElementById("darkMapToggle");
 
     let map = null;
+    let tileLayer = null;
+    let isDarkMap = false;
     const markers = {};   // uid -> L.marker
     const drivers = {};   // uid -> driver data
     let selectedUid = null;
+
+    const LIGHT_TILES = {
+      url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+      attribution: "&copy; OpenStreetMap contributors"
+    };
+    const DARK_TILES = {
+      url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+    };
 
     // ---------- login ----------
     loginForm.addEventListener("submit", e => {
@@ -320,11 +411,23 @@
     function initMap() {
       if (map) return;
       map = L.map("map").setView([-14.2350, -51.9253], 4);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      applyTileLayer(LIGHT_TILES);
+    }
+
+    function applyTileLayer(tiles) {
+      if (tileLayer) map.removeLayer(tileLayer);
+      tileLayer = L.tileLayer(tiles.url, {
         maxZoom: 19,
-        attribution: "&copy; OpenStreetMap contributors"
+        attribution: tiles.attribution
       }).addTo(map);
     }
+
+    darkMapToggle.addEventListener("click", () => {
+      isDarkMap = !isDarkMap;
+      applyTileLayer(isDarkMap ? DARK_TILES : LIGHT_TILES);
+      darkMapToggle.textContent = isDarkMap ? "☀️ Mapa claro" : "🌙 Mapa escuro";
+      darkMapToggle.classList.toggle("active-toggle", isDarkMap);
+    });
 
     // ---------- dados em tempo real ----------
     function listenDrivers() {
@@ -354,15 +457,19 @@
         } else {
           markers[uid].setLatLng([info.lat, info.lng]);
         }
-        markers[uid].bindPopup(popupHtml(info));
+        markers[uid].bindPopup(popupHtml(uid, info));
       }
     }
 
-    function popupHtml(info) {
+    function popupHtml(uid, info) {
+      const canStop = info.status !== "encerrado";
       return "<strong>" + escapeHtml(info.nome || "Motorista") + "</strong><br>" +
         (info.placa ? escapeHtml(info.placa) + "<br>" : "") +
         "Status: " + statusLabel(info.status) + "<br>" +
-        "Atualizado: " + formatTime(info.ultimaAtualizacao);
+        "Atualizado: " + formatTime(info.ultimaAtualizacao) +
+        (canStop
+          ? '<button class="popup-stop-btn" onclick="window.stopDriver(\'' + uid + '\')">🔴 Encerrar rastreamento</button>'
+          : "");
     }
 
     // ---------- lista lateral ----------
@@ -383,6 +490,7 @@
       driverList.innerHTML = "";
       uids.forEach(uid => {
         const info = drivers[uid];
+        const canStop = info.status !== "encerrado";
         const card = document.createElement("div");
         card.className = "driver-card" + (uid === selectedUid ? " selected" : "");
         card.innerHTML =
@@ -396,6 +504,18 @@
           '<span class="label">Autorizado em:</span> ' + formatTime(info.autorizadoEm) + '<br>' +
           '<span class="label">Última atualização:</span> ' + formatTime(info.ultimaAtualizacao) +
           '</div>';
+
+        const stopBtn = document.createElement("button");
+        stopBtn.className = "stop-btn";
+        stopBtn.type = "button";
+        stopBtn.textContent = canStop ? "🔴 Encerrar rastreamento" : "Rastreamento já encerrado";
+        stopBtn.disabled = !canStop;
+        stopBtn.addEventListener("click", ev => {
+          ev.stopPropagation();
+          stopDriver(uid);
+        });
+        card.appendChild(stopBtn);
+
         card.addEventListener("click", () => selectDriver(uid));
         driverList.appendChild(card);
       });
@@ -410,6 +530,21 @@
         if (markers[uid]) markers[uid].openPopup();
       }
     }
+
+    // ---------- encerrar rastreamento (feito pelo monitor) ----------
+    function stopDriver(uid) {
+      const info = drivers[uid];
+      const nome = info ? (info.nome || "este motorista") : "este motorista";
+      if (!confirm('Encerrar o rastreamento de "' + nome + '"? O motorista precisará reiniciar o processo para voltar a compartilhar a localização.')) {
+        return;
+      }
+      db.ref("drivers/" + uid).update({
+        status: "encerrado",
+        encerradoPeloMonitorEm: firebase.database.ServerValue.TIMESTAMP,
+        ultimaAtualizacao: firebase.database.ServerValue.TIMESTAMP
+      });
+    }
+    window.stopDriver = stopDriver;
 
     // ---------- helpers ----------
     function dotClass(info) {
