@@ -715,7 +715,7 @@
         "Sinal: " + signalStatus(info).label + "<br>" +
         "Status GPS: " + statusLabel(info.status) + "<br>" +
         "Atualizado: " + formatTime(info.ultimaAtualizacao) + "<br>" +
-        '<span class="popup-address">📍 ' + addressLine(uid) + '</span>' +
+        '<span class="popup-address"> ' + addressLine(uid) + '</span>' +
         '<span class="popup-coords">' + formatCoords(info.lat, info.lng) + '</span>' +
         actionHtml;
     }
@@ -728,7 +728,7 @@
 
       // Botão de limpeza reflete quantos registros incompletos existem
       // agora, independentemente de estarem sendo mostrados na lista.
-      cleanupBtn.textContent = "🧹 Limpar incompletos (" + ghostUids.length + ")";
+      cleanupBtn.textContent = " Limpar incompletos (" + ghostUids.length + ")";
       cleanupBtn.disabled = ghostUids.length === 0;
 
       summary.textContent = uids.length
