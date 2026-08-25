@@ -83,6 +83,27 @@
       font-weight: bold;
     }
 
+    #refreshBtn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #refreshBtn .icon {
+      display: inline-block;
+      transition: transform .4s ease;
+    }
+
+    #refreshBtn.spinning .icon {
+      transform: rotate(360deg);
+    }
+
+    #lastRefreshed {
+      font-size: 11px;
+      color: #9a978f;
+      white-space: nowrap;
+    }
+
     /* ---------- login ---------- */
     #loginWrap {
       min-height: calc(100vh - 55px);
@@ -326,6 +347,10 @@
       Painel Monitor Middle Mile Team. 
     </h1>
     <div class="right" id="topRight">
+      <span id="lastRefreshed"></span>
+      <button id="refreshBtn" type="button" title="Atualizar status dos motoristas">
+        <span class="icon">⟳</span> Atualizar
+      </button>
       <button id="darkMapToggle" type="button"> Mapa escuro</button>
       <span id="userEmail"></span>
     </div>
@@ -372,6 +397,8 @@
     const summary = document.getElementById("summary");
     const driverList = document.getElementById("driverList");
     const darkMapToggle = document.getElementById("darkMapToggle");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const lastRefreshed = document.getElementById("lastRefreshed");
 
     let map = null;
     let tileLayer = null;
@@ -441,6 +468,33 @@
       darkMapToggle.classList.toggle("active-toggle", isDarkMap);
     });
 
+    // ---------- atualização manual ----------
+    // Os dados já chegam em tempo real via db.ref("drivers").on("value"),
+    // mas o status "online / desatualizado / offline" de cada motorista é
+    // calculado a partir de Date.now() no momento da renderização — ou
+    // seja, ele só muda quando a lista é redesenhada. Esse botão força um
+    // novo cálculo/desenho da lista (e do horário mostrado), sem precisar
+    // esperar a próxima atualização de localização de algum motorista.
+    function refreshNow() {
+      refreshBtn.classList.add("spinning");
+      renderList();
+      updateLastRefreshedLabel();
+      setTimeout(() => refreshBtn.classList.remove("spinning"), 400);
+    }
+
+    function updateLastRefreshedLabel() {
+      lastRefreshed.textContent = "Atualizado às " + new Date().toLocaleTimeString("pt-BR");
+    }
+
+    refreshBtn.addEventListener("click", refreshNow);
+
+    // Também recalcula sozinho a cada 30s, para os pontos (online/stale/
+    // offline) não ficarem desatualizados enquanto ninguém clica no botão.
+    setInterval(() => {
+      renderList();
+      updateLastRefreshedLabel();
+    }, 30 * 1000);
+
     // ---------- dados em tempo real ----------
     function listenDrivers() {
       db.ref("drivers").on("value", snapshot => {
@@ -448,6 +502,7 @@
         Object.keys(drivers).forEach(uid => { if (!data[uid]) removeDriver(uid); });
         Object.keys(data).forEach(uid => upsertDriver(uid, data[uid]));
         renderList();
+        updateLastRefreshedLabel();
       });
     }
 
