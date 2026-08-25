@@ -921,9 +921,26 @@
         update.autorizadoEm = firebase.database.ServerValue.TIMESTAMP;
       }
 
-      driverRef.update(update);
-      watchConnection();
-      listenForStop();
+      // CORREÇÃO: só registramos o onDisconnect DEPOIS de confirmar que o
+      // perfil completo (nome, status, autorizadoEm) já foi gravado no
+      // servidor. Antes, watchConnection() era chamado logo após disparar
+      // o update() sem esperar ele terminar — se a conexão caísse bem
+      // nesse intervalo (sinal fraco, app fechado rápido demais), o
+      // onDisconnect podia disparar sozinho e criar um registro "fantasma"
+      // no banco (só com conexao/telaAberta, sem nome/status nenhum),
+      // exatamente o card quebrado que aparece no monitor.
+      driverRef.update(update)
+        .then(() => {
+          watchConnection();
+          listenForStop();
+        })
+        .catch(err => {
+          console.error("Falha ao gravar perfil inicial no banco.", err);
+          // Mesmo com erro, tentamos registrar presença para não deixar o
+          // motorista travado sem nenhum acompanhamento.
+          watchConnection();
+          listenForStop();
+        });
       saveLocalProfile(baseProfile);
 
       infoName.textContent = baseProfile.nome;
