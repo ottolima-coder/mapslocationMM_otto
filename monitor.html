@@ -252,6 +252,17 @@
       color: #9a978f;
     }
 
+    .driver-meta .address-line {
+      display: block;
+      margin-top: 2px;
+      color: var(--preto);
+    }
+
+    .driver-meta .coords-line {
+      font-family: "Courier New", monospace;
+      font-size: 11px;
+    }
+
     .badge {
       display: inline-block;
       font-size: 11px;
@@ -320,6 +331,19 @@
 
     .popup-stop-btn.remove-btn {
       background: #3A3931;
+    }
+
+    .popup-address {
+      display: block;
+      margin: 4px 0;
+      font-size: 12px;
+    }
+
+    .popup-coords {
+      display: block;
+      font-family: "Courier New", monospace;
+      font-size: 11px;
+      color: #3A3931;
     }
 
     @media (max-width: 760px) {
@@ -406,6 +430,12 @@
     const markers = {};   // uid -> L.marker
     const drivers = {};   // uid -> driver data
     let selectedUid = null;
+
+    // uid -> { lat, lng, time, address, addressDetails } — cache do endereço
+    // já resolvido, para não bater na API de geocodificação a cada render.
+    const geocodeCache = {};
+    // uid -> "carregando" | "erro" — para mostrar feedback enquanto busca.
+    const geocodeState = {};
 
     const LIGHT_TILES = {
       url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -508,6 +538,8 @@
 
     function removeDriver(uid) {
       delete drivers[uid];
+      delete geocodeCache[uid];
+      delete geocodeState[uid];
       if (markers[uid]) {
         map.removeLayer(markers[uid]);
         delete markers[uid];
@@ -525,7 +557,102 @@
           markers[uid].setLatLng([info.lat, info.lng]);
         }
         markers[uid].bindPopup(popupHtml(uid, info));
+        maybeReverseGeocode(uid, info.lat, info.lng);
       }
+    }
+
+    // ---------- geocodificação reversa (lat/lng -> endereço) ----------
+    // Usa a API pública do Nominatim (OpenStreetMap). A política de uso
+    // deles pede no máximo ~1 requisição por segundo, então usamos uma
+    // fila simples que processa um motorista por vez, com um pequeno
+    // intervalo entre chamadas. Também só busca de novo se o motorista se
+    // moveu mais de ~30m ou se o endereço em cache tiver mais de 10min.
+    const geocodeQueue = [];
+    let geocodeQueueRunning = false;
+
+    function maybeReverseGeocode(uid, lat, lng) {
+      const cached = geocodeCache[uid];
+      if (cached) {
+        const moved = distanceMeters(cached.lat, cached.lng, lat, lng);
+        const age = Date.now() - cached.time;
+        if (moved < 30 && age < 10 * 60 * 1000) return; // ainda válido, não busca de novo
+      }
+      if (geocodeState[uid] === "carregando") return; // já na fila/pendente
+
+      geocodeState[uid] = "carregando";
+      geocodeQueue.push({ uid, lat, lng });
+      processGeocodeQueue();
+    }
+
+    function processGeocodeQueue() {
+      if (geocodeQueueRunning) return;
+      geocodeQueueRunning = true;
+
+      const step = () => {
+        const item = geocodeQueue.shift();
+        if (!item) {
+          geocodeQueueRunning = false;
+          return;
+        }
+        doReverseGeocode(item.uid, item.lat, item.lng).finally(() => {
+          setTimeout(step, 1100); // respeita o limite de ~1 req/s do Nominatim
+        });
+      };
+      step();
+    }
+
+    function doReverseGeocode(uid, lat, lng) {
+      const url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="
+        + encodeURIComponent(lat) + "&lon=" + encodeURIComponent(lng)
+        + "&zoom=18&addressdetails=1";
+
+      return fetch(url, { headers: { "Accept": "application/json" } })
+        .then(r => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        })
+        .then(data => {
+          geocodeCache[uid] = {
+            lat: lat,
+            lng: lng,
+            time: Date.now(),
+            address: data.display_name || null,
+            addressDetails: data.address || {}
+          };
+          geocodeState[uid] = "ok";
+          renderList();
+          if (markers[uid] && drivers[uid]) {
+            markers[uid].setPopupContent(popupHtml(uid, drivers[uid]));
+          }
+        })
+        .catch(err => {
+          geocodeState[uid] = "erro";
+          console.warn("Falha ao obter endereço para " + uid, err);
+        });
+    }
+
+    // Distância aproximada em metros entre duas coordenadas (Haversine).
+    function distanceMeters(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const toRad = d => d * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    function formatCoords(lat, lng) {
+      if (lat == null || lng == null) return "—";
+      return lat.toFixed(5) + ", " + lng.toFixed(5);
+    }
+
+    function addressLine(uid) {
+      const cached = geocodeCache[uid];
+      if (cached && cached.address) return escapeHtml(cached.address);
+      if (geocodeState[uid] === "carregando") return "Buscando endereço...";
+      if (geocodeState[uid] === "erro") return "Endereço indisponível";
+      return "—";
     }
 
     function popupHtml(uid, info) {
@@ -537,7 +664,9 @@
       return "<strong>" + escapeHtml(info.nome || "Motorista") + "</strong><br>" +
         (info.placa ? escapeHtml(info.placa) + "<br>" : "") +
         "Status: " + statusLabel(info.status) + "<br>" +
-        "Atualizado: " + formatTime(info.ultimaAtualizacao) +
+        "Atualizado: " + formatTime(info.ultimaAtualizacao) + "<br>" +
+        '<span class="popup-address">📍 ' + addressLine(uid) + '</span>' +
+        '<span class="popup-coords">' + formatCoords(info.lat, info.lng) + '</span>' +
         actionHtml;
     }
 
@@ -560,6 +689,7 @@
       uids.forEach(uid => {
         const info = drivers[uid];
         const canStop = info.status !== "encerrado";
+        const hasCoords = info.lat != null && info.lng != null;
         const card = document.createElement("div");
         card.className = "driver-card" + (uid === selectedUid ? " selected" : "");
         card.innerHTML =
@@ -572,6 +702,10 @@
           '<span class="label">Status:</span> <span class="badge">' + statusLabel(info.status) + '</span><br>' +
           '<span class="label">Autorizado em:</span> ' + formatTime(info.autorizadoEm) + '<br>' +
           '<span class="label">Última atualização:</span> ' + formatTime(info.ultimaAtualizacao) +
+          (hasCoords
+            ? '<span class="address-line">📍 <span class="label">Endereço:</span> ' + addressLine(uid) + '</span>' +
+              '<span class="coords-line"><span class="label">Coordenadas:</span> ' + formatCoords(info.lat, info.lng) + '</span>'
+            : '<span class="address-line"><span class="label">Localização:</span> ainda não recebida</span>') +
           '</div>';
 
         // Botão de ação: enquanto ativo, encerra o rastreamento.
