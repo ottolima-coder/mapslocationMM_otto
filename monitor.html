@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Painel do Monitor MM Shippify Team</title>
+  <title>Monitor MM Shippify Team</title>
   <link rel="icon" type="image/png" href="favicon.png">
 
   <link
@@ -258,6 +258,14 @@
       background: #d63541;
     }
 
+    .stop-btn.remove-btn {
+      background: var(--chumbo);
+    }
+
+    .stop-btn.remove-btn:hover {
+      background: #4a4940;
+    }
+
     .stop-btn:disabled {
       background: var(--cinza);
       color: var(--chumbo);
@@ -289,6 +297,10 @@
       cursor: pointer;
     }
 
+    .popup-stop-btn.remove-btn {
+      background: #3A3931;
+    }
+
     @media (max-width: 760px) {
       .layout {
         display: flex;
@@ -311,7 +323,7 @@
   <header class="topbar">
     <h1>
       <img class="brand-logo" src="favicon.png" alt="MM Shippify">
-      Painel do Monitor - Localização dos motoritas. 
+      Painel Monitor Middle Mile Team. 
     </h1>
     <div class="right" id="topRight">
       <button id="darkMapToggle" type="button"> Mapa escuro</button>
@@ -425,7 +437,7 @@
     darkMapToggle.addEventListener("click", () => {
       isDarkMap = !isDarkMap;
       applyTileLayer(isDarkMap ? DARK_TILES : LIGHT_TILES);
-      darkMapToggle.textContent = isDarkMap ? "☀️ Mapa claro" : "🌙 Mapa escuro";
+      darkMapToggle.textContent = isDarkMap ? "Mapa claro" : "Mapa escuro";
       darkMapToggle.classList.toggle("active-toggle", isDarkMap);
     });
 
@@ -463,13 +475,15 @@
 
     function popupHtml(uid, info) {
       const canStop = info.status !== "encerrado";
+      const actionHtml = canStop
+        ? '<button class="popup-stop-btn" onclick="window.stopDriver(\'' + uid + '\')">🔴 Encerrar rastreamento</button>'
+        : '<button class="popup-stop-btn remove-btn" onclick="window.removeDriverCard(\'' + uid + '\')">✖ Remover da lista</button>';
+
       return "<strong>" + escapeHtml(info.nome || "Motorista") + "</strong><br>" +
         (info.placa ? escapeHtml(info.placa) + "<br>" : "") +
         "Status: " + statusLabel(info.status) + "<br>" +
         "Atualizado: " + formatTime(info.ultimaAtualizacao) +
-        (canStop
-          ? '<button class="popup-stop-btn" onclick="window.stopDriver(\'' + uid + '\')">🔴 Encerrar rastreamento</button>'
-          : "");
+        actionHtml;
     }
 
     // ---------- lista lateral ----------
@@ -505,16 +519,22 @@
           '<span class="label">Última atualização:</span> ' + formatTime(info.ultimaAtualizacao) +
           '</div>';
 
-        const stopBtn = document.createElement("button");
-        stopBtn.className = "stop-btn";
-        stopBtn.type = "button";
-        stopBtn.textContent = canStop ? "🔴 Encerrar rastreamento" : "Rastreamento já encerrado";
-        stopBtn.disabled = !canStop;
-        stopBtn.addEventListener("click", ev => {
+        // Botão de ação: enquanto ativo, encerra o rastreamento.
+        // Depois de encerrado, vira "Remover da lista" e apaga o registro
+        // do banco para não poluir o painel.
+        const actionBtn = document.createElement("button");
+        actionBtn.type = "button";
+        actionBtn.className = "stop-btn" + (canStop ? "" : " remove-btn");
+        actionBtn.textContent = canStop ? "Encerrar rastreamento" : "✖ Remover da lista";
+        actionBtn.addEventListener("click", ev => {
           ev.stopPropagation();
-          stopDriver(uid);
+          if (canStop) {
+            stopDriver(uid);
+          } else {
+            removeDriverCard(uid);
+          }
         });
-        card.appendChild(stopBtn);
+        card.appendChild(actionBtn);
 
         card.addEventListener("click", () => selectDriver(uid));
         driverList.appendChild(card);
@@ -545,6 +565,17 @@
       });
     }
     window.stopDriver = stopDriver;
+
+    // ---------- remover card encerrado (limpeza do painel) ----------
+    function removeDriverCard(uid) {
+      const info = drivers[uid];
+      const nome = info ? (info.nome || "este motorista") : "este motorista";
+      if (!confirm('Remover "' + nome + '" da lista? Isso apaga o registro definitivamente do banco de dados.')) {
+        return;
+      }
+      db.ref("drivers/" + uid).remove();
+    }
+    window.removeDriverCard = removeDriverCard;
 
     // ---------- helpers ----------
     function dotClass(info) {
