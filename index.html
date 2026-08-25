@@ -316,11 +316,14 @@
         <div class="consent-box">
           <strong>⚠️ Leia antes de continuar</strong>
           Ao aceitar abaixo e conceder a permissão de localização do navegador,
-          a localização deste celular passará a ser enviada de forma
-          <strong>contínua</strong> para o painel do monitor da MM Shippify,
-          durante todo o período do seu turno de entrega. O monitor poderá ver
-          seu nome, os dados informados e sua posição em tempo real no mapa dele.
-          O encerramento do compartilhamento durante o turno é feito pelo
+          sua localização será enviada ao painel do monitor da MM Shippify
+          <strong>toda vez que você abrir ou desbloquear esta página</strong>,
+          e também periodicamente enquanto ela estiver aberta na tela, durante
+          o seu turno de entrega. Ela <strong>não</strong> é enviada de forma
+          contínua com a tela bloqueada ou o app minimizado — para isso, basta
+          abrir a tela normalmente durante o turno. O monitor poderá ver seu
+          nome, os dados informados e sua posição a cada atualização. O
+          encerramento do compartilhamento durante o turno é feito pelo
           monitor responsável. Você pode revogar a permissão de localização a
           qualquer momento diretamente nas configurações do seu navegador ou
           celular.
@@ -328,7 +331,7 @@
 
         <label class="checkbox-row">
           <input id="acceptCheck" type="checkbox">
-          <span>Li e autorizo o compartilhamento contínuo da minha localização com o monitor durante o turno de entrega.</span>
+          <span>Li e autorizo o compartilhamento da minha localização com o monitor sempre que eu abrir/desbloquear o app durante o turno de entrega.</span>
         </label>
 
         <button id="acceptBtn" disabled> ACEITAR E ATIVAR LOCALIZAÇÃO</button>
@@ -340,7 +343,7 @@
         <div class="big-status">
           <div id="activeIcon" class="icon">🟢</div>
           <div id="activeTitle" class="title">Localização sendo compartilhada</div>
-          <div id="activeSub" class="sub">Mantenha esta página aberta em segundo plano.</div>
+          <div id="activeSub" class="sub">Abra esta tela de tempos em tempos durante o turno para atualizar sua posição.</div>
         </div>
       </section>
 
@@ -355,9 +358,8 @@
 
       <section id="stopSection" class="step panel">
         <div class="notice" id="message">
-          Sua localização está sendo enviada ao painel do monitor durante o turno. Você não visualiza outros motoristas nesta tela, por design. O encerramento do compartilhamento é feito pelo monitor.
+          Sua localização é enviada ao painel do monitor sempre que você abre esta tela, e a cada poucos minutos enquanto ela fica aberta. Se você bloquear o celular, a atualização retoma assim que você desbloquear. Você não visualiza outros motoristas nesta tela, por design. O encerramento do compartilhamento é feito pelo monitor.
         </div>
-        <div class="notice warn" id="wakeLockNotice" style="margin-top:10px; display:none;"></div>
       </section>
 
     </div>
@@ -374,11 +376,15 @@
     const auth = firebase.auth();
     const db = firebase.database();
 
+    // Enquanto a página fica visível/aberta, capturamos uma nova posição a
+    // cada UPDATE_INTERVAL_MS. Isso NÃO roda com a tela bloqueada — é só
+    // para dar granularidade extra quando o motorista mantém a tela aberta.
+    const UPDATE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
+
     let driverUid = null;
-    let watchId = null;
     let driverRef = null;
-    let wakeLock = null;
     let trackingActive = false;
+    let intervalId = null;
 
     // ---------- elementos ----------
     const step1 = document.getElementById("step1");
@@ -400,7 +406,6 @@
     const statusDot = document.getElementById("statusDot");
     const statusText = document.getElementById("statusText");
     const message = document.getElementById("message");
-    const wakeLockNotice = document.getElementById("wakeLockNotice");
 
     const activeIcon = document.getElementById("activeIcon");
     const activeTitle = document.getElementById("activeTitle");
@@ -437,35 +442,50 @@
       }
     }
 
-    // ---------- Wake Lock: impede a tela de apagar sozinha ----------
-    // Isso NÃO faz o rastreamento funcionar com o app minimizado — só evita
-    // que a tela apague por inatividade enquanto o motorista está com a
-    // página aberta. Se não for suportado, o app continua funcionando normal.
-    async function requestWakeLock() {
-      if (!("wakeLock" in navigator)) {
-        wakeLockNotice.style.display = "block";
-        wakeLockNotice.textContent = "Seu navegador não suporta manter a tela ligada automaticamente. Mantenha a tela do celular ligada manualmente durante o turno.";
+    // ---------- captura de posição sob demanda ----------
+    // Dispara sempre que: (1) o motorista acaba de aceitar, (2) a página
+    // volta a ficar visível (ele desbloqueou/reabriu o celular), e
+    // (3) a cada UPDATE_INTERVAL_MS enquanto a página segue visível.
+    function captureLocation() {
+      if (!navigator.geolocation) {
+        message.textContent = "Este navegador não oferece suporte à API de localização.";
+        setTopStatus("erro");
         return;
       }
-      try {
-        wakeLock = await navigator.wakeLock.request("screen");
-        wakeLockNotice.style.display = "none";
-        wakeLock.addEventListener("release", () => {
-          wakeLock = null;
-        });
-      } catch (err) {
-        // Falha comum: página não está visível no momento do pedido.
-        // Vamos tentar de novo quando a aba voltar a ficar visível.
-        console.warn("Wake Lock não pôde ser adquirido agora:", err);
+      navigator.geolocation.getCurrentPosition(onPosition, onPositionError, {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 20000
+      });
+    }
+
+    function startInterval() {
+      stopInterval();
+      intervalId = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          captureLocation();
+        }
+      }, UPDATE_INTERVAL_MS);
+    }
+
+    function stopInterval() {
+      if (intervalId !== null) {
+        clearInterval(intervalId);
+        intervalId = null;
       }
     }
 
-    // O Wake Lock é liberado automaticamente pelo navegador quando a aba
-    // fica em segundo plano. Assim que o motorista volta pra aba, tentamos
-    // pedir de novo.
+    // Quando a página volta a ficar visível (motorista desbloqueou/reabriu),
+    // captura na hora e reinicia o ciclo de atualização periódica.
     document.addEventListener("visibilitychange", () => {
-      if (trackingActive && document.visibilityState === "visible" && wakeLock === null) {
-        requestWakeLock();
+      if (!trackingActive) return;
+      if (document.visibilityState === "visible") {
+        captureLocation();
+        startInterval();
+      } else {
+        // Em segundo plano o navegador vai suspender isso de qualquer forma;
+        // paramos o interval só para não deixar timers acumulados.
+        stopInterval();
       }
     });
 
@@ -512,12 +532,6 @@
     });
 
     function beginTracking() {
-      if (!navigator.geolocation) {
-        message.textContent = "Este navegador não oferece suporte à API de localização.";
-        setTopStatus("erro");
-        return;
-      }
-
       const profile = {
         nome: nameInput.value.trim(),
         telefone: phoneInput.value.trim() || null,
@@ -537,13 +551,11 @@
       activeSub.textContent = "Autorize o acesso quando o navegador perguntar.";
 
       trackingActive = true;
-      requestWakeLock();
 
-      watchId = navigator.geolocation.watchPosition(
-        onPosition,
-        onPositionError,
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }
-      );
+      // Primeira captura imediata + inicia o ciclo periódico enquanto a
+      // página seguir aberta e visível.
+      captureLocation();
+      startInterval();
     }
 
     function onPosition(position) {
@@ -553,12 +565,12 @@
       setTopStatus("ativo");
       activeIcon.textContent = "🟢";
       activeTitle.textContent = "Localização sendo compartilhada";
-      activeSub.textContent = "Mantenha esta página aberta em segundo plano.";
+      activeSub.textContent = "Abra esta tela de tempos em tempos durante o turno para atualizar sua posição.";
 
       infoStatus.textContent = "Ativo";
       infoUpdated.textContent = now.toLocaleTimeString("pt-BR");
       infoAccuracy.textContent = Math.round(c.accuracy) + " m";
-      message.textContent = "Sua localização está sendo enviada ao painel do monitor durante o turno. Você não visualiza outros motoristas nesta tela, por design. O encerramento do compartilhamento é feito pelo monitor.";
+      message.textContent = "Sua localização é enviada ao painel do monitor sempre que você abre esta tela, e a cada poucos minutos enquanto ela fica aberta. Se você bloquear o celular, a atualização retoma assim que você desbloquear. Você não visualiza outros motoristas nesta tela, por design. O encerramento do compartilhamento é feito pelo monitor.";
 
       if (driverRef) {
         driverRef.update({
@@ -583,7 +595,7 @@
         text = "A localização está indisponível neste momento.";
         dbStatus = "indisponivel";
       } else if (error.code === 3) {
-        text = "A solicitação de localização expirou. Tentando novamente...";
+        text = "A solicitação de localização expirou. Tentando novamente na próxima abertura da tela.";
         dbStatus = "timeout";
       }
 
@@ -603,12 +615,7 @@
 
     window.addEventListener("beforeunload", () => {
       trackingActive = false;
-      if (watchId !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-      if (wakeLock) {
-        wakeLock.release();
-      }
+      stopInterval();
     });
   </script>
 </body>
