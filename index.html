@@ -565,6 +565,40 @@
     let trackingActive = false;
     let intervalId = null;
 
+    // ---------- persistência local (para retomar após recarregar) ----------
+    // Guardamos os dados do motorista no localStorage (fica salvo mesmo
+    // depois de fechar/recarregar a página, ao contrário da sessão do
+    // Firebase que é só "enquanto a aba estiver aberta"). Assim, quando a
+    // página recarrega, sabemos que ele já autorizou antes e retomamos o
+    // rastreamento sozinhos, sem pedir os dados de novo.
+    const STORAGE_KEY = "mmshippify_driver_profile";
+
+    function saveLocalProfile(profile) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+      } catch (e) {
+        console.warn("Não foi possível salvar os dados localmente.", e);
+      }
+    }
+
+    function loadLocalProfile() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function clearLocalProfile() {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (e) { /* ignora */ }
+    }
+
+    let loadedProfile = null;
+    let resumedFromStorage = false;
+
     // ---------- elementos ----------
     const step1 = document.getElementById("step1");
     const step2 = document.getElementById("step2");
@@ -606,6 +640,49 @@
         stopSection.classList.add("visible");
       }
     }
+
+    // ---------- tenta retomar sessão salva ----------
+    // Se já existe um cadastro salvo localmente, pulamos direto para a
+    // tela de "rastreamento ativo" (em vez do formulário) e aguardamos o
+    // Firebase restaurar (ou refazer) o login sozinho.
+    (function tryResumeFromStorage() {
+      const saved = loadLocalProfile();
+      if (!saved || !saved.nome) return;
+
+      loadedProfile = saved;
+      resumedFromStorage = true;
+
+      nameInput.value = saved.nome || "";
+      phoneInput.value = saved.telefone || "";
+      plateInput.value = saved.placa || "";
+      destinationInput.value = saved.destino || "";
+
+      showStep(3);
+      activeIcon.textContent = "⏳";
+      activeTitle.textContent = "Retomando seu rastreamento...";
+      activeSub.textContent = "Aguarde só um instante.";
+
+      // A sessão anônima do Firebase costuma ser restaurada sozinha (fica
+      // salva no navegador). Se isso não acontecer em alguns segundos
+      // (ex.: navegador limpou os dados), autenticamos de novo — sem
+      // mostrar a tela de consentimento outra vez, já que o motorista já
+      // autorizou antes.
+      setTimeout(() => {
+        if (!auth.currentUser) {
+          auth.signInAnonymously().catch(err => {
+            console.error("Falha ao retomar sessão automaticamente.", err);
+            activeIcon.textContent = "⚠️";
+            activeTitle.textContent = "Não foi possível retomar automaticamente";
+            activeSub.textContent = "Toque no botão abaixo para recomeçar o cadastro.";
+            const retryBtn = document.createElement("button");
+            retryBtn.textContent = "Recomeçar identificação";
+            retryBtn.style.marginTop = "14px";
+            retryBtn.onclick = () => { clearLocalProfile(); location.reload(); };
+            document.getElementById("step3").querySelector(".big-status").appendChild(retryBtn);
+          });
+        }
+      }, 3000);
+    })();
 
     function setTopStatus(state) {
       statusDot.classList.remove("active", "error");
@@ -768,30 +845,51 @@
       driverUid = user.uid;
       driverRef = db.ref("drivers/" + driverUid);
 
+      // Retomando de um cadastro salvo localmente (recarregou a página):
+      // pula direto para o rastreamento, sem passar pelo formulário/consentimento de novo.
+      if (resumedFromStorage) {
+        resumedFromStorage = false;
+        beginTracking(true);
+        return;
+      }
+
       // Só inicia o rastreamento se o usuário acabou de aceitar (checkbox marcado
       // e ainda estamos no passo 2). Evita iniciar sozinho em recarregamentos.
       if (acceptCheck.checked && step2.classList.contains("visible")) {
-        beginTracking();
+        beginTracking(false);
       }
     });
 
-    function beginTracking() {
-      const profile = {
+    function beginTracking(resumed) {
+      const baseProfile = resumed && loadedProfile ? loadedProfile : {
         nome: nameInput.value.trim(),
         telefone: phoneInput.value.trim() || null,
         placa: plateInput.value.trim() || null,
-        destino: destinationInput.value.trim() || null,
+        destino: destinationInput.value.trim() || null
+      };
+
+      const update = {
+        nome: baseProfile.nome,
+        telefone: baseProfile.telefone,
+        placa: baseProfile.placa,
+        destino: baseProfile.destino,
         status: "aguardando_gps",
         telaAberta: true,
         conexao: "conectado",
-        autorizadoEm: firebase.database.ServerValue.TIMESTAMP,
         ultimaAtualizacao: firebase.database.ServerValue.TIMESTAMP
       };
+      // "autorizadoEm" só é gravado na primeira vez — em uma retomada, não
+      // faz sentido sobrescrever quando o motorista autorizou originalmente.
+      if (!resumed) {
+        update.autorizadoEm = firebase.database.ServerValue.TIMESTAMP;
+      }
 
-      driverRef.update(profile);
+      driverRef.update(update);
       watchConnection();
+      listenForStop();
+      saveLocalProfile(baseProfile);
 
-      infoName.textContent = profile.nome;
+      infoName.textContent = baseProfile.nome;
       showStep(3);
       activeIcon.textContent = "⏳";
       activeTitle.textContent = "Solicitando permissão de localização...";
@@ -803,6 +901,26 @@
       // página seguir aberta e visível.
       captureLocation();
       startInterval();
+    }
+
+    // Se o monitor encerrar o rastreamento pelo painel, paramos de tentar
+    // reenviar localização e limpamos os dados salvos localmente — assim
+    // a próxima vez que essa página abrir, ela pede o cadastro de novo em
+    // vez de tentar retomar um rastreamento que já foi encerrado.
+    function listenForStop() {
+      if (!driverRef) return;
+      driverRef.child("status").on("value", snap => {
+        if (snap.val() === "encerrado" && trackingActive) {
+          trackingActive = false;
+          stopInterval();
+          clearLocalProfile();
+          setTopStatus("encerrado");
+          showStep(3);
+          activeIcon.textContent = "⏹️";
+          activeTitle.textContent = "Rastreamento encerrado pelo monitor";
+          activeSub.textContent = "Se precisar retomar, atualize a página e cadastre-se novamente.";
+        }
+      });
     }
 
     function onPosition(position) {
